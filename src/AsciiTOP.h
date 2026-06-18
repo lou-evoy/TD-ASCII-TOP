@@ -5,7 +5,7 @@
  * CUDA kernel so it scales to huge input resolutions.
  *
  * Thin SDK-facing glue. All image processing lives in AsciiCUDA.{h,cu}; the glyph bitmaps
- * are rasterized on the host in GlyphAtlas.{h,cpp} (GDI) and uploaded as a texture.
+ * come from the built-in pixel-font atlas in GlyphAtlas.{h,cpp} and are uploaded as a texture.
  *
  * Validated against TouchDesigner 2025.32050, TOP C++ API version 12.
  */

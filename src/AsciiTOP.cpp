@@ -243,7 +243,6 @@ AsciiTOP::getErrorString(OP_String* error, void*)
     error->setString(myError);
 }
 
-// ------------------------------- parameters ----------------------------------
 static void appendFloat(OP_ParameterManager* m, const char* name, const char* label,
                         const char* page, double def, double lo, double hi,
                         bool clampLo = true, bool clampHi = true)

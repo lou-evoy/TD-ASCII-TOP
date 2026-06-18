@@ -1,8 +1,8 @@
 /* ASCII TOP — CUDA algorithm interface (edge-preserving real-time ASCII mosaic).
  *
  * Plain C++17 contract between the TouchDesigner glue (AsciiTOP.cpp) and the CUDA
- * implementation (AsciiCUDA.cu). The glyph bitmaps themselves are rasterized on the host
- * (GlyphAtlas.{h,cpp}, GDI) and handed here as a coverage buffer to upload.
+ * implementation (AsciiCUDA.cu). The glyph bitmaps come from the built-in pixel-font atlas
+ * (GlyphAtlas.{h,cpp}) and are handed here as a coverage buffer to upload.
  *
  * Algorithm (per Acerola's ASCII shader, minus the depth/normal G-buffer passes a flat TOP
  * can't supply): luminance -> Difference of Gaussians -> Sobel edge direction -> per-cell

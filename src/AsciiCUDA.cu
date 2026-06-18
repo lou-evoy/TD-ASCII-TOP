@@ -89,7 +89,6 @@ __global__ void passthroughKernel(cudaSurfaceObject_t in, cudaSurfaceObject_t ou
     surf2Dwrite(c, out, x * (int)sizeof(uchar4), y, cudaBoundaryModeZero);
 }
 
-// ----------------------------- fused ASCII kernel ----------------------------
 __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outSurf,
                             cudaTextureObject_t atlas, KParams P)
 {
@@ -312,7 +311,6 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         }
 }
 
-// ------------------------------ AsciiRenderer --------------------------------
 AsciiRenderer::~AsciiRenderer()
 {
     if (myAtlasTex) cudaDestroyTextureObject(myAtlasTex);

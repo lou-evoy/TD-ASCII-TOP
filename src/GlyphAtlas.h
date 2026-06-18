@@ -1,15 +1,12 @@
-/* ASCII TOP — host-side glyph atlas builder (GDI).
+/* ASCII TOP — host-side glyph atlas builder.
  *
- * Rasterizes a monospace font into a single-channel coverage strip at the exact cell size,
- * so the GPU samples glyphs 1:1 (crisp at any density, no upscaling). Runs on the CPU only
- * when the font / cell size / style changes — never per frame.
+ * Assembles the built-in 8x8 pixel glyphs into a single-channel coverage strip. There is no
+ * GDI, no system font, and no external font asset — the glyph bitmaps are embedded in
+ * GlyphAtlas.cpp. The strip is built once on the host and uploaded as a device texture.
  *
  * Layout of the produced strip (matches AsciiCUDA.h's glyph order):
  *   [ edge glyphs: | - / \ ]  then  [ fill ramp: numFill glyphs sorted ascending by ink ]
  * each glyph is glyphPx x glyphPx, laid left-to-right; height = glyphPx.
- *
- * Windows-only (GDI). This header is host C++ — it is NOT included by the .cu, so it never
- * reaches nvcc. <windows.h> is pulled in by GlyphAtlas.cpp, not here.
  */
 #ifndef ASCII_GLYPH_ATLAS_H
 #define ASCII_GLYPH_ATLAS_H
@@ -21,14 +18,14 @@
 
 namespace ascii {
 
-// Everything that affects the rasterized bitmaps. Used as the rebuild cache key.
+// Identifies a built atlas; used as the rebuild cache key.
 struct GlyphAtlasSpec
 {
-    char  fontName[128] = "Pixel";    // monospace family name (GDI face name), or "Pixel"
+    char  fontName[128] = "Pixel";
     int   cellSize      = 8;          // glyph rasterization px (power of two)
-    bool  crisp         = false;      // threshold coverage to 1-bit (chunky pixel look)
+    bool  crisp         = false;
     bool  bold          = false;
-    bool  pixel         = true;       // use the embedded 8x8 pixel font (ignores GDI fields)
+    bool  pixel         = true;       // use the embedded 8x8 pixel font
 
     bool operator==(const GlyphAtlasSpec& o) const
     {
