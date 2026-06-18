@@ -21,7 +21,7 @@ so the picture keeps its structure instead of dissolving into a flat character g
 
 ## Getting the node
 
-The compiled plugin isn't distributed here — precompiled builds will be available to supporters on **Patreon** *(link coming soon)*. To build it yourself, read on.
+The compiled plugin isn't distributed here — precompiled builds will be available on **Gumroad** *(link coming soon)*. To build it yourself, read on.
 
 ## Build it yourself
 
