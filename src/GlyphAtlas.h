@@ -1,12 +1,6 @@
 /* ASCII TOP — host-side glyph atlas builder.
- *
- * Assembles the built-in 8x8 pixel glyphs into a single-channel coverage strip. There is no
- * GDI, no system font, and no external font asset — the glyph bitmaps are embedded in
- * GlyphAtlas.cpp. The strip is built once on the host and uploaded as a device texture.
- *
- * Layout of the produced strip (matches AsciiCUDA.h's glyph order):
- *   [ edge glyphs: | - / \ ]  then  [ fill ramp: numFill glyphs sorted ascending by ink ]
- * each glyph is glyphPx x glyphPx, laid left-to-right; height = glyphPx.
+ * assembles built-in 8x8 pixel glyphs into a single-channel coverage strip (no GDI/font asset).
+ * strip layout (matches AsciiCUDA.h): [edges | - / \] then [fill ramp ascending by ink].
  */
 #ifndef ASCII_GLYPH_ATLAS_H
 #define ASCII_GLYPH_ATLAS_H
@@ -42,8 +36,7 @@ struct GlyphAtlasResult
     int numFill = 0;
 };
 
-// Returns true on success. On failure returns false and (if err) fills a message; the
-// caller should fall back to leaving the previous atlas in place.
+// true on success; on failure fills err and caller keeps the previous atlas
 bool buildGlyphAtlas(const GlyphAtlasSpec& spec, GlyphAtlasResult& out, std::string* err);
 
 } // namespace ascii

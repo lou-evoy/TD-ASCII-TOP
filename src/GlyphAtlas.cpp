@@ -1,10 +1,6 @@
-/* ASCII TOP — built-in pixel glyph atlas. See GlyphAtlas.h.
- *
- * Acerola's exact 8x8 glyphs, decoded straight from AcerolaFX's edgesASCII.png / fillASCII.png
- * and embedded below, assembled into a single coverage strip:
- *   [ edges: | - / \ ]  then  [ fill: empty . : C O P 0 ? @ block ]  (dark -> bright)
- * Genuinely pixel-perfect (designed on the grid) and a 1:1 match to his shader. No system
- * fonts, no GDI — the atlas is fixed and built once.
+/* ASCII TOP — built-in pixel glyph atlas (see GlyphAtlas.h).
+ * Acerola's 8x8 glyphs from AcerolaFX edgesASCII.png / fillASCII.png, embedded below.
+ * strip: [edges | - / \] then [fill: empty . : C O P 0 ? @ block] (dark -> bright).
  */
 #include "GlyphAtlas.h"
 #include "AsciiCUDA.h"   // kNumEdgeGlyphs (shared glyph-slot order)
@@ -14,14 +10,14 @@ namespace ascii {
 // Row 0 = top; bit i (LSB = leftmost) = column i.
 struct PixelGlyph { unsigned char rows[8]; };
 
-// Edge glyphs in slot order (V, H, /, \) = Acerola edge slots 1,2,3,4.
+// edge glyphs in slot order (V, H, /, \)
 static const PixelGlyph kPixelEdges[ascii::kNumEdgeGlyphs] = {
     {{0x00,0x08,0x08,0x08,0x08,0x08,0x08,0x00}}, // |  vertical
     {{0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00}}, // -  horizontal
     {{0x00,0x20,0x10,0x10,0x08,0x08,0x04,0x00}}, // /
     {{0x00,0x04,0x08,0x08,0x10,0x10,0x20,0x00}}, // backslash
 };
-// Acerola's 10-level fill ramp (fillASCII.png), dark -> bright.
+// Acerola 10-level fill ramp, dark -> bright
 static const PixelGlyph kPixelFill[] = {
     {{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}}, // (empty)
     {{0x00,0x00,0x00,0x00,0x00,0x00,0x10,0x00}}, // .

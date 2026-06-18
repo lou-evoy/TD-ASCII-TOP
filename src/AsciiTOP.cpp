@@ -1,4 +1,4 @@
-/* ASCII TOP — TouchDesigner SDK glue. Mirrors the CudaTOP sample structure. */
+/* ASCII TOP — TD glue; mirrors the CudaTOP sample. */
 #include "AsciiTOP.h"
 
 #include <cassert>
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <utility>
 
-// Single source of truth for the plugin version.
+// plugin version
 static const char* kVersion = "1.0.0";
 
 extern "C"
@@ -48,8 +48,7 @@ DestroyTOPInstance(TOP_CPlusPlusBase* instance, TOP_Context* context)
 
 } // extern "C"
 
-// Recreate the surface object fresh each cook (robust against bypass toggles — TD frees and
-// re-registers the cudaArray, so a cached surface handle would go stale).
+// recreate each cook, never cache: bypass/reactivate frees the cudaArray (stale handle)
 static void
 setupCudaSurface(cudaSurfaceObject_t* surface, cudaArray_t array)
 {
@@ -101,11 +100,11 @@ AsciiTOP::getInfoPopupString(OP_String* info, void*)
     info->setString(buf);
 }
 
-// Build the built-in Acerola pixel-font atlas once (it never changes), staging it for upload.
+// build the built-in Acerola glyph atlas once, stage for upload
 void
 AsciiTOP::prepareAtlas()
 {
-    ascii::GlyphAtlasSpec spec;     // defaults to the built-in 8px Pixel font
+    ascii::GlyphAtlasSpec spec;     // built-in 8px Pixel font
     if (myAtlasValid && spec == myAtlasSpec)
         return;
 
@@ -169,7 +168,7 @@ AsciiTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void*)
     p.blurSigma     = (float)inputs->getParDouble("Blursigma");
     p.sigmaScale    = (float)inputs->getParDouble("Sigmascale");
     p.dogThreshold  = (float)inputs->getParDouble("Threshold");
-    // Higher "Edge Amount" = more edges, so it maps to a LOWER internal sample-fraction threshold.
+    // higher Edge Amount = more edges -> lower internal threshold
     p.edgeThreshold = 1.0f - (float)inputs->getParDouble("Edgeamount");
 
     p.viewEdges       = inputs->getParInt("Viewedges") != 0;
@@ -190,7 +189,7 @@ AsciiTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void*)
 
     p.bypass = inputs->getParInt("Bypass") != 0;
 
-    // Build the glyph atlas on the host BEFORE begin (it only actually builds once).
+    // build atlas host-side before begin (builds once)
     if (!p.bypass)
         prepareAtlas();
 
@@ -200,7 +199,7 @@ AsciiTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void*)
         return;
     }
 
-    // Upload a freshly built atlas to the device (CUDA work — must be inside begin/end).
+    // upload atlas to device (must be inside begin/end)
     if (myHasPending)
     {
         const char* algoErr = nullptr;
@@ -285,7 +284,7 @@ AsciiTOP::setupParameters(OP_ParameterManager* manager, void*)
     const char* P = "ASCII";
     appendToggle(manager, "Bypass", "Bypass", P, false);
 
-    {   // Cell size (density) — power-of-two. 8 = densest, 128 = largest font.
+    {   // cell size (density), pow2: 8 densest, 128 largest
         OP_StringParameter sp("Cellsize");
         sp.label = "Cell Size"; sp.page = P; sp.defaultValue = "C16";
         const char* names[]  = { "C8", "C16", "C32", "C64", "C128" };
@@ -297,7 +296,7 @@ AsciiTOP::setupParameters(OP_ParameterManager* manager, void*)
     // ---- Edges page --------------------------------------------------------
     const char* E = "Edges";
     appendToggle(manager, "Drawedges", "Draw Edges", E, true);
-    {   // Blur truncation radius (samples). Small = fast; larger = smoother, thicker lines.
+    {   // blur truncation radius (samples)
         OP_NumericParameter np("Kernelsize");
         np.label = "Kernel Size"; np.page = E;
         np.defaultValues[0] = 2;
@@ -312,7 +311,7 @@ AsciiTOP::setupParameters(OP_ParameterManager* manager, void*)
     appendFloat(manager, "Threshold",  "Threshold",       E, 0.005, 0.001, 0.1);
     appendFloat(manager, "Edgeamount", "Edge Amount",     E, 1.0, 0.0, 1.0);
 
-    // Debug: output the detected edge map (white edges on black) instead of glyphs.
+    // debug: output edge map
     appendToggle(manager, "Viewedges", "View Edge Map", E, false);
 
     // ---- Fill page ---------------------------------------------------------

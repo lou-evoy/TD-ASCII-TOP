@@ -1,13 +1,7 @@
-/* ASCII TOP — TouchDesigner Custom Operator (C++ TOP, CUDA execute mode).
- *
- * Edge-preserving ASCII / text-mosaic effect. A real-time port of Acerola's ASCII shader
- * (Difference-of-Gaussians edge lines + luminance fill glyphs), rebuilt as a single fused
- * CUDA kernel so it scales to huge input resolutions.
- *
- * Thin SDK-facing glue. All image processing lives in AsciiCUDA.{h,cu}; the glyph bitmaps
- * come from the built-in pixel-font atlas in GlyphAtlas.{h,cpp} and are uploaded as a texture.
- *
- * Validated against TouchDesigner 2025.32050, TOP C++ API version 12.
+/* ASCII TOP — TD glue.
+ * edge-preserving ASCII mosaic (port of Acerola's shader) as one fused CUDA kernel.
+ * image processing in AsciiCUDA.{h,cu}; glyphs from GlyphAtlas.{h,cpp}.
+ * validated: TouchDesigner 2025.32050, TOP C++ API v12.
  */
 #ifndef ASCII_TOP_H
 #define ASCII_TOP_H
@@ -34,8 +28,7 @@ public:
     virtual void    setupParameters(OP_ParameterManager* manager, void* reserved1) override;
 
 private:
-    // Build the (fixed, built-in) pixel glyph atlas once, staging it in myPendingAtlas. The
-    // device upload happens in execute() inside the begin/end block.
+    // build the built-in glyph atlas once (staged in myPendingAtlas; uploaded in execute())
     void            prepareAtlas();
 
     const OP_NodeInfo*  myNodeInfo;
@@ -47,8 +40,7 @@ private:
 
     ascii::AsciiRenderer myRenderer;
 
-    // Glyph atlas cache: rebuild only when the spec changes. A freshly rasterized atlas is
-    // staged in myPendingAtlas (host) and uploaded to the device inside the begin/end block.
+    // glyph atlas cache: rebuild only when spec changes
     ascii::GlyphAtlasSpec   myAtlasSpec;
     bool                    myAtlasValid;
     ascii::GlyphAtlasResult myPendingAtlas;

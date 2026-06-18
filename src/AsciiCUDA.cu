@@ -1,19 +1,4 @@
-/* ASCII TOP — CUDA implementation (edge-preserving real-time ASCII mosaic).
- *
- * Targets CUDA Toolkit 13.x. Fat binary Turing..Blackwell.
- *
- * ONE fused kernel, one thread block per cell. The block loads its cell's pixels (+ a small
- * blur halo) into shared memory once, then in shared memory: computes luminance, a
- * Difference-of-Gaussians edge response, a Sobel gradient direction per sample, votes on the
- * cell's dominant edge direction, and averages the cell color/luma. It then writes every
- * output pixel of the cell by sampling the glyph atlas (a directional line glyph if the cell
- * is "edgy", else a fill glyph chosen by average luminance). Global memory traffic is ~one
- * read + one write of the image, so cost is bandwidth-bound and barely grows with resolution.
- *
- * Cells are power-of-two; analysis is capped at kMaxAnalysisDim samples/axis (big cells
- * subsample — one direction vote doesn't need per-pixel DoG over a 128px cell), which also
- * bounds shared-memory use.
- */
+// CUDA ASCII-mosaic kernels
 #include "AsciiCUDA.h"
 #include "CudaCheck.h"
 
@@ -23,7 +8,7 @@ namespace ascii {
 
 static constexpr float AX_PI = 3.14159265358979323846f;
 
-// Shared-memory grid dimensions sized for the worst case (A = 32, R = 8).
+// shared-mem dims, worst case (A=32, R=8)
 static constexpr int LUMA_DIM = kMaxAnalysisDim + 2 * kMaxBlurRadius;  // 48
 static constexpr int EDGE_DIM = kMaxAnalysisDim;                       // 32
 
@@ -46,7 +31,7 @@ static __device__ __forceinline__ float clampf(float v, float lo, float hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// Read a pixel's RGB as [0,1], honoring channel order, clamped at the image border.
+// pixel RGB as [0,1], border-clamped
 static __device__ __forceinline__ void readRGB(cudaSurfaceObject_t s, int x, int y, int bgra,
                                                float& r, float& g, float& b)
 {
@@ -56,7 +41,7 @@ static __device__ __forceinline__ void readRGB(cudaSurfaceObject_t s, int x, int
     else      { r = c.x * (1.0f / 255.0f); g = c.y * (1.0f / 255.0f); b = c.z * (1.0f / 255.0f); }
 }
 
-// Map a Sobel gradient to an edge-line glyph slot (Acerola's angle buckets), or -1.
+// Sobel gradient -> edge-glyph slot (Acerola angle buckets), or -1
 static __device__ __forceinline__ int classifyDir(float gx, float gy)
 {
     float mag = sqrtf(gx * gx + gy * gy);
@@ -70,7 +55,7 @@ static __device__ __forceinline__ int classifyDir(float gx, float gy)
     return -1;
 }
 
-// Sum a value across a full 32-lane warp (block thread counts are multiples of 32 here).
+// full 32-lane warp sum (thread counts are multiples of 32)
 static __device__ __forceinline__ float warpReduceSum(float v)
 {
 #pragma unroll
@@ -78,7 +63,7 @@ static __device__ __forceinline__ float warpReduceSum(float v)
     return v;
 }
 
-// Bypass: copy input straight to output.
+// bypass: input -> output
 __global__ void passthroughKernel(cudaSurfaceObject_t in, cudaSurfaceObject_t out, int W, int H)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -106,7 +91,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     const int nthreads = A * A;
 
     __shared__ float  sLuma[LUMA_DIM * LUMA_DIM];
-    __shared__ float2 sBlurH[LUMA_DIM * EDGE_DIM];   // horizontal-blurred (both sigmas)
+    __shared__ float2 sBlurH[LUMA_DIM * EDGE_DIM];   // h-blurred, both sigmas
     __shared__ float  sEdge[EDGE_DIM * EDGE_DIM];
     __shared__ float w1[2 * kMaxBlurRadius + 1];
     __shared__ float w2[2 * kMaxBlurRadius + 1];
@@ -116,7 +101,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     __shared__ int   sGlyph;
     __shared__ float sFgR, sFgG, sFgB;
 
-    // Map a cell-local sample index (can be negative for the halo) to an image pixel.
+    // cell-local sample (neg = halo) -> image pixel
     auto sampleToPixel = [&](int s, int origin, int limit) -> int {
         int p = origin + s * step + step / 2;
         return clampi(p, 0, limit - 1);
@@ -126,9 +111,8 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     if (tid < kNumEdgeGlyphs) buckets[tid] = 0;
     __syncthreads();
 
-    // 1a. Each thread loads its own inner sample's color and computes luma into sLuma.
-    //     Keep the color in registers for a warp-reduced cell average (cheaper than every
-    //     thread atomic-adding to the same accumulator).
+    // 1a. each thread loads its inner sample's color, luma into sLuma; color kept in
+    //     registers for warp-reduced average (cheaper than per-thread atomics)
     float myR, myG, myB, myL;
     {
         int px = sampleToPixel(tx, cellX0, P.W);
@@ -138,7 +122,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         sLuma[(R + ty) * LD + (R + tx)] = myL;
     }
 
-    // Cell color/luma average: reduce within each warp, then one atomic per warp.
+    // cell color/luma avg: warp reduce, one atomic per warp
     {
         float rr = warpReduceSum(myR), gg = warpReduceSum(myG);
         float bb = warpReduceSum(myB), ll = warpReduceSum(myL);
@@ -146,7 +130,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         { atomicAdd(&sumR, rr); atomicAdd(&sumG, gg); atomicAdd(&sumB, bb); atomicAdd(&sumL, ll); }
     }
 
-    // 1b. Cooperatively load the halo ring (luma only) around the cell.
+    // 1b. load halo ring (luma only)
     for (int k = tid; k < LD * LD; k += nthreads)
     {
         int lx = k % LD, ly = k / LD;
@@ -158,7 +142,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         sLuma[ly * LD + lx] = luma(r, g, b);
     }
 
-    // 2. Normalized 1D Gaussian weights for both sigmas (the 2D kernel is their product).
+    // 2. normalized 1D Gaussian weights, both sigmas
     if (tid == 0)
     {
         float s1 = 0.0f, s2 = 0.0f;
@@ -173,8 +157,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     }
     __syncthreads();
 
-    // 3a. Separable Gaussian — horizontal pass over every row at the inner columns, both
-    //     sigmas packed into a float2. (Separable = 2*(2R+1) taps instead of (2R+1)^2.)
+    // 3a. separable Gaussian, horizontal pass; both sigmas packed in float2
     for (int k = tid; k < LD * A; k += nthreads)
     {
         int x = k % A, y = k / A;
@@ -188,7 +171,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     }
     __syncthreads();
 
-    // 3b. Vertical pass + Difference of Gaussians at this inner sample -> binary edge.
+    // 3b. vertical pass + DoG -> binary edge
     {
         float b1 = 0.0f, b2 = 0.0f;
         for (int dj = -R; dj <= R; ++dj)
@@ -196,7 +179,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
             float2 hv = sBlurH[(R + ty + dj) * A + tx];
             b1 += w1[dj + R] * hv.x; b2 += w2[dj + R] * hv.y;
         }
-        float D = b1 - b2;   // Difference of Gaussians (tau = 1)
+        float D = b1 - b2;   // DoG, tau = 1
         float edge = (D >= P.dogThr) ? 1.0f : 0.0f;
         sEdge[ty * A + tx] = edge;
         float ecnt = warpReduceSum(edge);
@@ -204,7 +187,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     }
     __syncthreads();
 
-    // 4. Sobel on the edge map -> dominant-direction vote (edge samples only).
+    // 4. Sobel on edge map -> direction vote (edge samples only)
     {
         if (sEdge[ty * A + tx] > 0.0f)
         {
@@ -221,7 +204,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     }
     __syncthreads();
 
-    // 5. Thread 0 picks the glyph for the whole cell.
+    // 5. thread 0 picks the cell glyph
     if (tid == 0)
     {
         int total = A * A;
@@ -262,9 +245,8 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     }
     __syncthreads();
 
-    // 6. Render every output pixel of the cell. The glyph is rasterized at glyphPx (a small
-    //    base resolution) and nearest-upscaled to the cell by glyphShift = log2(C/glyphPx) —
-    //    an exact power-of-two blow-up, so it stays pixel-perfect at any density.
+    // 6. render every output pixel; glyph nearest-upscaled by glyphShift=log2(C/glyphPx),
+    //    exact pow2 blow-up so it stays pixel-perfect
     const int glyph = sGlyph;
     const float bg0 = P.bg0, bg1 = P.bg1, bg2 = P.bg2;
     const float fr = sFgR, fg = sFgG, fb = sFgB;
@@ -276,7 +258,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
             int ox = cellX0 + lx, oy = cellY0 + ly;
             if (ox >= P.W || oy >= P.H) continue;
 
-            // Debug: show the detected edge map (white where a sample is an edge).
+            // debug: edge map (white = edge sample)
             if (P.viewEdges)
             {
                 int sx = min(lx / step, A - 1), sy = min(ly / step, A - 1);
@@ -291,9 +273,7 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
             {
                 int gx = lx >> P.glyphShift;
                 int gy = ly >> P.glyphShift;
-                // TD's output surface is bottom-up, so a stamped FILL character would read
-                // upside down — flip it vertically. Edge glyphs are direction-detected in the
-                // same surface space (self-consistent), so they are left as-is.
+                // TD surface is bottom-up: flip fill glyphs (edge glyphs are self-consistent)
                 if (glyph >= kNumEdgeGlyphs) gy = (P.glyphPx - 1) - gy;
                 cov = tex2D<float>(atlas, glyphCol + gx + 0.5f, gy + 0.5f);
             }
@@ -325,7 +305,7 @@ cudaError_t AsciiRenderer::setGlyphAtlas(const uint8_t* coverage, int glyphPx, i
     const int stripW = total * glyphPx;
     const int stripH = glyphPx;
 
-    // Reallocate the array only when the dimensions changed.
+    // realloc only when dims changed
     if (myAtlasArr == nullptr || myGlyphPx != glyphPx || myNumFill != numFill)
     {
         if (myAtlasTex) { cudaDestroyTextureObject(myAtlasTex); myAtlasTex = 0; }
@@ -371,7 +351,7 @@ cudaError_t AsciiRenderer::process(cudaSurfaceObject_t inSurf, cudaSurfaceObject
 
     if (!hasAtlas())
     {
-        // No glyphs yet (atlas failed to build) — pass through rather than render black.
+        // no atlas yet: pass through instead of black
         dim3 b(16, 16, 1), g(divUp(W, 16), divUp(H, 16), 1);
         passthroughKernel<<<g, b, 0, stream>>>(inSurf, outSurf, W, H);
         AX_CUDA_CHECK_LAUNCH(outError);
@@ -385,11 +365,11 @@ cudaError_t AsciiRenderer::process(cudaSurfaceObject_t inSurf, cudaSurfaceObject
 
     float sigma1 = p.blurSigma     < 0.1f ? 0.1f : p.blurSigma;
     float sigma2 = sigma1 * (p.sigmaScale < 1.0f ? 1.0f : p.sigmaScale);
-    int   R = p.kernelSize;                 // truncation radius in samples (Acerola-style)
+    int   R = p.kernelSize;                 // truncation radius, samples
     if (R < 1) R = 1;
     if (R > kMaxBlurRadius) R = kMaxBlurRadius;
 
-    // glyphShift = log2(C / glyphPx). The atlas is built at glyphPx <= C (host-clamped).
+    // glyphShift = log2(C / glyphPx); atlas built at glyphPx <= C
     int gp = myGlyphPx < 1 ? 1 : myGlyphPx;
     int glyphShift = 0;
     for (int t = C / gp; t > 1; t >>= 1) ++glyphShift;
