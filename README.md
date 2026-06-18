@@ -3,8 +3,7 @@
 A custom TOP that converts an image to ASCII glyphs each frame while **preserving edges**:
 flat regions map to a luminance-ramped glyph set, while contours found by a
 Difference-of-Gaussians pass are drawn with direction-matched line glyphs (`|` `-` `/` `\`),
-so the picture keeps its structure instead of dissolving into a flat character grid. A
-real-time port of [Acerola's ASCII shader](https://github.com/GarrettGunnell/AcerolaFX).
+so the picture keeps its structure instead of dissolving into a flat character grid. This is a port of [Acerola's ASCII shader](https://github.com/GarrettGunnell/AcerolaFX).
 
 ## Demo
 
@@ -45,4 +44,4 @@ cmake --build build
 ```
 
 Output: `build/AsciiTOP.dll`. Copy it to `%USERPROFILE%\Documents\Derivative\Plugins\`,
-restart TouchDesigner, and add the node from **OP Create → TOP → "ASCII"**.
+restart TouchDesigner, and add the node from **OP Create → Custom → "ASCII"**.
