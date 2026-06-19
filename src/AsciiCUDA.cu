@@ -17,7 +17,7 @@ struct KParams
     int   W, H, C, A, step, R, glyphPx, glyphShift, numFill;
     int   drawEdges, drawFill, invert, bgra, tintFromSource;
     float sigma1, sigma2, dogThr, edgeThr, exposure, atten, tintAmount;
-    float fg0, fg1, fg2, bg0, bg1, bg2;
+    float fg0, fg1, fg2, fg3, bg0, bg1, bg2, bg3;
     int   viewEdges;
 };
 
@@ -32,13 +32,14 @@ static __device__ __forceinline__ float clampf(float v, float lo, float hi)
 }
 
 // pixel RGB as [0,1], border-clamped
-static __device__ __forceinline__ void readRGB(cudaSurfaceObject_t s, int x, int y, int bgra,
-                                               float& r, float& g, float& b)
+static __device__ __forceinline__ void readRGBA(cudaSurfaceObject_t s, int x, int y, int bgra,
+                                               float& r, float& g, float& b, float& a)
 {
     uchar4 c;
     surf2Dread(&c, s, x * (int)sizeof(uchar4), y, cudaBoundaryModeClamp);
     if (bgra) { b = c.x * (1.0f / 255.0f); g = c.y * (1.0f / 255.0f); r = c.z * (1.0f / 255.0f); }
     else      { r = c.x * (1.0f / 255.0f); g = c.y * (1.0f / 255.0f); b = c.z * (1.0f / 255.0f); }
+    a = c.w * (1.0f / 255.0f);
 }
 
 // Sobel gradient -> edge-glyph slot (Acerola angle buckets), or -1
@@ -97,9 +98,9 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     __shared__ float w2[2 * kMaxBlurRadius + 1];
     __shared__ int   buckets[kNumEdgeGlyphs];
     __shared__ int   edgeCnt;
-    __shared__ float sumR, sumG, sumB, sumL;
+    __shared__ float sumR, sumG, sumB, sumA, sumL;
     __shared__ int   sGlyph;
-    __shared__ float sFgR, sFgG, sFgB;
+    __shared__ float sFgR, sFgG, sFgB, sFgA;
 
     // cell-local sample (neg = halo) -> image pixel
     auto sampleToPixel = [&](int s, int origin, int limit) -> int {
@@ -107,17 +108,17 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         return clampi(p, 0, limit - 1);
     };
 
-    if (tid == 0) { edgeCnt = 0; sumR = sumG = sumB = sumL = 0.0f; }
+    if (tid == 0) { edgeCnt = 0; sumR = sumG = sumB = sumA = sumL = 0.0f; }
     if (tid < kNumEdgeGlyphs) buckets[tid] = 0;
     __syncthreads();
 
     // 1a. each thread loads its inner sample's color, luma into sLuma; color kept in
     //     registers for warp-reduced average (cheaper than per-thread atomics)
-    float myR, myG, myB, myL;
+    float myR, myG, myB, myA, myL;
     {
         int px = sampleToPixel(tx, cellX0, P.W);
         int py = sampleToPixel(ty, cellY0, P.H);
-        readRGB(inSurf, px, py, P.bgra, myR, myG, myB);
+        readRGBA(inSurf, px, py, P.bgra, myR, myG, myB, myA);
         myL = luma(myR, myG, myB);
         sLuma[(R + ty) * LD + (R + tx)] = myL;
     }
@@ -125,9 +126,9 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
     // cell color/luma avg: warp reduce, one atomic per warp
     {
         float rr = warpReduceSum(myR), gg = warpReduceSum(myG);
-        float bb = warpReduceSum(myB), ll = warpReduceSum(myL);
+        float bb = warpReduceSum(myB), aa = warpReduceSum(myA), ll = warpReduceSum(myL);
         if ((tid & 31) == 0)
-        { atomicAdd(&sumR, rr); atomicAdd(&sumG, gg); atomicAdd(&sumB, bb); atomicAdd(&sumL, ll); }
+        { atomicAdd(&sumR, rr); atomicAdd(&sumG, gg); atomicAdd(&sumB, bb); atomicAdd(&sumA, aa); atomicAdd(&sumL, ll); }
     }
 
     // 1b. load halo ring (luma only)
@@ -137,8 +138,8 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
         if (lx >= R && lx < R + A && ly >= R && ly < R + A) continue;   // inner done above
         int px = sampleToPixel(lx - R, cellX0, P.W);
         int py = sampleToPixel(ly - R, cellY0, P.H);
-        float r, g, b;
-        readRGB(inSurf, px, py, P.bgra, r, g, b);
+        float r, g, b, a;
+        readRGBA(inSurf, px, py, P.bgra, r, g, b, a);
         sLuma[ly * LD + lx] = luma(r, g, b);
     }
 
@@ -233,23 +234,24 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
             glyph = kNumEdgeGlyphs + level;
         }
 
-        float fr = P.fg0, fg = P.fg1, fb = P.fg2;
+        float fr = P.fg0, fg = P.fg1, fb = P.fg2, fa = P.fg3;
         if (P.tintFromSource)
         {
-            float ar = sumR * invCount, ag = sumG * invCount, ab = sumB * invCount;
+            float ar = sumR * invCount, ag = sumG * invCount, ab = sumB * invCount, aa = sumA * invCount;
             fr = fr + (ar - fr) * P.tintAmount;
             fg = fg + (ag - fg) * P.tintAmount;
             fb = fb + (ab - fb) * P.tintAmount;
+            fa = fa + (aa - fa) * P.tintAmount;
         }
-        sGlyph = glyph; sFgR = fr; sFgG = fg; sFgB = fb;
+        sGlyph = glyph; sFgR = fr; sFgG = fg; sFgB = fb; sFgA = fa;
     }
     __syncthreads();
 
     // 6. render every output pixel; glyph nearest-upscaled by glyphShift=log2(C/glyphPx),
     //    exact pow2 blow-up so it stays pixel-perfect
     const int glyph = sGlyph;
-    const float bg0 = P.bg0, bg1 = P.bg1, bg2 = P.bg2;
-    const float fr = sFgR, fg = sFgG, fb = sFgB;
+    const float bg0 = P.bg0, bg1 = P.bg1, bg2 = P.bg2, bg3 = P.bg3;
+    const float fr = sFgR, fg = sFgG, fb = sFgB, fa = sFgA;
     const int glyphCol = (glyph >= 0) ? glyph * P.glyphPx : 0;
 
     for (int ly = ty; ly < C; ly += A)
@@ -281,12 +283,14 @@ __global__ void asciiKernel(cudaSurfaceObject_t inSurf, cudaSurfaceObject_t outS
             float rr = bg0 + (fr - bg0) * cov;
             float gg = bg1 + (fg - bg1) * cov;
             float bb = bg2 + (fb - bg2) * cov;
+            float aa = bg3 + (fa - bg3) * cov;
 
             uint32_t r8 = (uint32_t)clampf(rr * 255.0f + 0.5f, 0.0f, 255.0f);
             uint32_t g8 = (uint32_t)clampf(gg * 255.0f + 0.5f, 0.0f, 255.0f);
             uint32_t b8 = (uint32_t)clampf(bb * 255.0f + 0.5f, 0.0f, 255.0f);
-            uint32_t out = P.bgra ? (b8 | (g8 << 8) | (r8 << 16) | (255u << 24))
-                                  : (r8 | (g8 << 8) | (b8 << 16) | (255u << 24));
+            uint32_t a8 = (uint32_t)clampf(aa * 255.0f + 0.5f, 0.0f, 255.0f);
+            uint32_t out = P.bgra ? (b8 | (g8 << 8) | (r8 << 16) | (a8 << 24))
+                                  : (r8 | (g8 << 8) | (b8 << 16) | (a8 << 24));
             surf2Dwrite(out, outSurf, ox * (int)sizeof(uchar4), oy, cudaBoundaryModeZero);
         }
 }
@@ -383,8 +387,8 @@ cudaError_t AsciiRenderer::process(cudaSurfaceObject_t inSurf, cudaSurfaceObject
     kp.sigma1 = sigma1; kp.sigma2 = sigma2; kp.dogThr = p.dogThreshold;
     kp.edgeThr = p.edgeThreshold; kp.exposure = p.exposure; kp.atten = p.attenuation;
     kp.tintAmount = p.tintAmount;
-    kp.fg0 = p.fgColor[0]; kp.fg1 = p.fgColor[1]; kp.fg2 = p.fgColor[2];
-    kp.bg0 = p.bgColor[0]; kp.bg1 = p.bgColor[1]; kp.bg2 = p.bgColor[2];
+    kp.fg0 = p.fgColor[0]; kp.fg1 = p.fgColor[1]; kp.fg2 = p.fgColor[2]; kp.fg3 = p.fgColor[3];
+    kp.bg0 = p.bgColor[0]; kp.bg1 = p.bgColor[1]; kp.bg2 = p.bgColor[2]; kp.bg3 = p.bgColor[3];
     kp.viewEdges = p.viewEdges ? 1 : 0;
 
     dim3 block(A, A, 1);

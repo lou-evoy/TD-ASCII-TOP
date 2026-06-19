@@ -54,8 +54,8 @@ struct Params
     bool     invert      = false;    // invert luma -> glyph
 
     // color
-    float    fgColor[3]  = { 1.0f, 1.0f, 1.0f };  // ASCII color (white)
-    float    bgColor[3]  = { 0.0f, 0.0f, 0.0f };  // background (black)
+    float    fgColor[4]  = { 1.0f, 1.0f, 1.0f, 1.0f };  // ASCII color (white)
+    float    bgColor[4]  = { 0.0f, 0.0f, 0.0f, 1.0f };  // background (black)
     bool     tintFromSource = false;              // color glyphs by cell avg
     float    tintAmount  = 1.0f;                  // blend fg toward source avg
 

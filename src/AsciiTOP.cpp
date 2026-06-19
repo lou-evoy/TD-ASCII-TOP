@@ -181,9 +181,11 @@ AsciiTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void*)
     p.fgColor[0] = (float)inputs->getParDouble("Asciicolor", 0);
     p.fgColor[1] = (float)inputs->getParDouble("Asciicolor", 1);
     p.fgColor[2] = (float)inputs->getParDouble("Asciicolor", 2);
+    p.fgColor[3] = (float)inputs->getParDouble("Asciicolor", 3);
     p.bgColor[0] = (float)inputs->getParDouble("Backgroundcolor", 0);
     p.bgColor[1] = (float)inputs->getParDouble("Backgroundcolor", 1);
     p.bgColor[2] = (float)inputs->getParDouble("Backgroundcolor", 2);
+    p.bgColor[3] = (float)inputs->getParDouble("Backgroundcolor", 3);
     p.tintFromSource = inputs->getParInt("Tintfromsource") != 0;
     p.tintAmount     = (float)inputs->getParDouble("Tintamount");
 
@@ -266,14 +268,14 @@ static void appendToggle(OP_ParameterManager* m, const char* name, const char* l
 }
 
 static void appendColor(OP_ParameterManager* m, const char* name, const char* label,
-                        const char* page, double r0, double g0, double b0)
+                        const char* page, double r0, double g0, double b0, double a0)
 {
     OP_NumericParameter np(name);
     np.label = label; np.page = page;
-    np.defaultValues[0] = r0; np.defaultValues[1] = g0; np.defaultValues[2] = b0;
-    for (int i = 0; i < 3; ++i) { np.minValues[i] = 0.0; np.maxValues[i] = 1.0;
+    np.defaultValues[0] = r0; np.defaultValues[1] = g0; np.defaultValues[2] = b0; np.defaultValues[3] = a0;
+    for (int i = 0; i < 4; ++i) { np.minValues[i] = 0.0; np.maxValues[i] = 1.0;
         np.minSliders[i] = 0.0; np.maxSliders[i] = 1.0; np.clampMins[i] = true; np.clampMaxes[i] = true; }
-    OP_ParAppendResult r = m->appendRGB(np);
+    OP_ParAppendResult r = m->appendRGBA(np);
     assert(r == OP_ParAppendResult::Success);
 }
 
@@ -323,8 +325,8 @@ AsciiTOP::setupParameters(OP_ParameterManager* manager, void*)
 
     // ---- Color page --------------------------------------------------------
     const char* C = "Color";
-    appendColor(manager, "Asciicolor", "ASCII Color", C, 1.0, 1.0, 1.0);
-    appendColor(manager, "Backgroundcolor", "Background Color", C, 0.0, 0.0, 0.0);
+    appendColor(manager, "Asciicolor", "ASCII Color", C, 1.0, 1.0, 1.0, 1.0);
+    appendColor(manager, "Backgroundcolor", "Background Color", C, 0.0, 0.0, 0.0, 1.0);
     appendToggle(manager, "Tintfromsource", "Tint From Source", C, false);
     appendFloat(manager, "Tintamount", "Tint Amount", C, 1.0, 0.0, 1.0);
 
