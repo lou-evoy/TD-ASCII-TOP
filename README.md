@@ -7,9 +7,9 @@ so the picture keeps its structure instead of dissolving into a flat character g
 
 ## Demo
 
-<video src="https://github.com/lou-evoy/TD-ASCII-TOP/raw/main/media/ascii-demo.mp4" controls muted loop width="100%"></video>
+[![ASCII TOP demo](media/ascii-demo-poster.jpg)](media/ascii-demo.mp4)
 
-> If the video doesn't play inline, [watch it here](media/ascii-demo.mp4).
+▶ **[Play the demo](media/ascii-demo.mp4)** — opens in GitHub's built-in video player.
 
 ## Why this one
 
