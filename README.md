@@ -7,7 +7,8 @@ so the picture keeps its structure instead of dissolving into a flat character g
 
 ## Demo
 
-[![ASCII TOP demo](media/ascii-demo-poster.jpg)](media/ascii-demo.mp4)
+<!-- To embed an inline auto-playing player: edit this README on github.com, delete the link below, then drag media/ascii-demo.mp4 into the editor. GitHub uploads it and inserts the video player automatically. -->
+[Watch the demo ▶](media/ascii-demo.mp4)
 
 ## Why this one
 
