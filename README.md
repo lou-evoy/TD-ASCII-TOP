@@ -9,8 +9,6 @@ so the picture keeps its structure instead of dissolving into a flat character g
 
 [![ASCII TOP demo](media/ascii-demo-poster.jpg)](media/ascii-demo.mp4)
 
-▶ **[Play the demo](media/ascii-demo.mp4)** — opens in GitHub's built-in video player.
-
 ## Why this one
 
 - **Edge preservation.** A Difference-of-Gaussians + Sobel-direction pass lays line glyphs
